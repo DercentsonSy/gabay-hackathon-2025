@@ -6,7 +6,7 @@
 
 export const AppSettings = {
   // Set to true to use real Alibaba Cloud APIs, false to use simulation
-  useRealAPIs: false,
+  useRealAPIs: true,
   
   // Development flags
   isDevelopment: true,

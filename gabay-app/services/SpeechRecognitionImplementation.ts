@@ -75,16 +75,16 @@ export const realSpeechRecognitionService = {
       await recording.prepareToRecordAsync({
         android: {
           extension: '.wav',
-          outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
+          outputFormat: 2, // ENCODING_PCM_16BIT
+          audioEncoder: 3, // AMR_NB
           sampleRate: 16000,
           numberOfChannels: 1,
           bitRate: 128000,
         },
         ios: {
           extension: '.wav',
-          outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
-          audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+          outputFormat: 1, // kAudioFormatLinearPCM
+          audioQuality: 0x7E, // AVAudioQualityHigh
           sampleRate: 16000,
           numberOfChannels: 1,
           bitRate: 128000,
@@ -139,7 +139,7 @@ export const realSpeechRecognitionService = {
       // Send to Alibaba Cloud NLS API
       const response = await axios({
         method: 'POST',
-        url: `${AlibabaCloudConfig.endpoints.nls}/recognize`,
+        url: `${AlibabaCloudConfig.endpoints.nls}/nls-service/v1/asr`,
         headers: {
           'Content-Type': 'application/json',
           'X-NLS-Token': token
@@ -148,20 +148,30 @@ export const realSpeechRecognitionService = {
           appkey: AlibabaCloudConfig.nls.appKey,
           format: 'wav',
           sample_rate: 16000,
-          enable_punctuation_prediction: true,
+          enable_punctuation: true,
           enable_inverse_text_normalization: true,
+          enable_voice_detection: true,
+          enable_model: "general",
           audio: base64Audio
         }
       });
       
       // Parse response
+      console.log('NLS ASR Response:', JSON.stringify(response.data));
+      
       if (response.data && response.data.result) {
         return {
           text: response.data.result,
           confidence: response.data.confidence || 0.8
         };
+      } else if (response.data && response.data.flash_result) {
+        // Alternative response format
+        return {
+          text: response.data.flash_result.sentences[0]?.text || "",
+          confidence: response.data.flash_result.sentences[0]?.confidence || 0.8
+        };
       } else {
-        // For prototype fallback, in case of API failure
+        console.error('Unexpected NLS response format:', response.data);
         return {
           text: "I couldn't understand that. Please try again.",
           confidence: 0.1

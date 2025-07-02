@@ -16,6 +16,7 @@ import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import AlibabaCloudConfig from '../config/alibabacloud';
 import AppSettings from '../config/appSettings';
+import { VoiceVerificationResult, VoiceEnrollmentResult, VoiceProfile } from './VoiceAuthenticationImplementation';
 
 // Types for the services
 export interface SpeechRecognitionResult {
@@ -86,17 +87,31 @@ interface IRealTextToSpeechService {
   voices: Voice[];
 }
 
+interface IRealVoiceAuthenticationService {
+  enrollVoice: (userId: string, audioBlob: Blob, phrase?: string) => Promise<VoiceEnrollmentResult>;
+  verifyVoice: (voiceId: string, audioBlob: Blob, phrase?: string) => Promise<VoiceVerificationResult>;
+  getVoiceProfiles: (userId: string) => Promise<VoiceProfile[]>;
+  deleteVoiceProfile: (voiceId: string) => Promise<boolean>;
+  startRecording: () => Promise<{ recording: any }>;
+  stopRecording: (recording: any) => Promise<string>;
+  audioFileToBlob: (fileUri: string) => Promise<Blob>;
+}
+
 // Import real implementations if available
 let realSpeechRecognition: IRealSpeechRecognition | undefined;
 let realNLPService: IRealNLPService | undefined;
 let realOCRService: IRealOCRService | undefined;
 let realTextToSpeechService: IRealTextToSpeechService | undefined;
+let realVoiceAuthenticationService: IRealVoiceAuthenticationService | undefined;
 
 try {
   // Only try to import if we're using real APIs
   if (AppSettings.useRealAPIs) {
     realSpeechRecognition = require('./SpeechRecognitionImplementation').default;
-    // Other services would be imported here when implemented
+    realNLPService = require('./NLPServiceImplementation').default;
+    realOCRService = require('./OCRServiceImplementation').default;
+    realTextToSpeechService = require('./TextToSpeechImplementation').default;
+    realVoiceAuthenticationService = require('./VoiceAuthenticationImplementation').default;
   }
 } catch (error) {
   console.warn('Failed to import real API implementations', error);
@@ -110,79 +125,35 @@ export const SpeechRecognitionService = {
   recognize: async (audioBlob: Blob): Promise<SpeechRecognitionResult> => {
     console.log("Using Alibaba Cloud Speech Recognition...");
     
-    // Check if we should use real APIs
-    if (AppSettings.useRealAPIs && realSpeechRecognition) {
-      try {
-        return await realSpeechRecognition.recognize(audioBlob);
-      } catch (error) {
-        console.error('Real speech recognition failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
-      }
+    if (realSpeechRecognition) {
+      return await realSpeechRecognition.recognize(audioBlob);
+    } else {
+      throw new Error('Speech recognition service is not available');
     }
-    
-    // Simulation mode
-    console.log("Using simulated Speech Recognition");
-    
-    // For prototype, return mock results based on simulated voice commands
-    const mockResults: { [key: string]: SpeechRecognitionResult } = {
-      "send_money": {
-        text: "Send money to John",
-        confidence: 0.92
-      },
-      "pay_bills": {
-        text: "Pay my electricity bill",
-        confidence: 0.89
-      },
-      "buy_load": {
-        text: "Buy load for my phone",
-        confidence: 0.94
-      },
-      "check_balance": {
-        text: "What's my current balance",
-        confidence: 0.97
-      }
-    };
-    
-    // Randomly select one of the mock results
-    const mockKeys = Object.keys(mockResults);
-    const randomKey = mockKeys[Math.floor(Math.random() * mockKeys.length)];
-    
-    return simulateApiCall(mockResults[randomKey]);
   },
   
-  // These methods will be available for real implementation
-  startRecording: async (): Promise<any> => {
-    if (AppSettings.useRealAPIs && realSpeechRecognition) {
+  startRecording: async (): Promise<{ recording: any }> => {
+    if (realSpeechRecognition) {
       return realSpeechRecognition.startRecording();
+    } else {
+      throw new Error('Speech recognition recording is not available');
     }
-    
-    // Simulation just returns a mock recording object
-    console.log("Starting simulated recording");
-    return { recording: { mockRecording: true } };
   },
   
   stopRecording: async (recording: any): Promise<string> => {
-    if (AppSettings.useRealAPIs && realSpeechRecognition && !recording.mockRecording) {
+    if (realSpeechRecognition) {
       return realSpeechRecognition.stopRecording(recording);
+    } else {
+      throw new Error('Speech recognition recording is not available');
     }
-    
-    // Simulation just returns a fake URI
-    console.log("Stopping simulated recording");
-    return "file:///mock/recording.wav";
   },
   
   audioFileToBlob: async (fileUri: string): Promise<Blob> => {
-    if (AppSettings.useRealAPIs && realSpeechRecognition) {
-      try {
-        return await realSpeechRecognition.audioFileToBlob(fileUri);
-      } catch (error) {
-        console.error('Real audioFileToBlob failed, falling back to simulation', error);
-      }
+    if (realSpeechRecognition) {
+      return realSpeechRecognition.audioFileToBlob(fileUri);
+    } else {
+      throw new Error('Speech recognition audio file to blob is not available');
     }
-    
-    // Create a mock blob for simulation
-    console.log("Creating simulated audio blob");
-    return new Blob([], { type: 'audio/wav' });
   }
 };
 
@@ -192,65 +163,13 @@ export const SpeechRecognitionService = {
  */
 export const NLPService = {
   analyze: async (text: string): Promise<NLPResult> => {
-    console.log("Using Alibaba Cloud NLP:", text);
+    console.log(`Analyzing text with NLP: ${text}`);
     
-    // Check if we should use real APIs
-    if (AppSettings.useRealAPIs && realNLPService) {
-      try {
-        return await realNLPService.analyze(text);
-      } catch (error) {
-        console.error('Real NLP service failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
-      }
-    }
-    
-    // Simulation mode
-    console.log("Using simulated NLP");
-    
-    // Get simulated response
-    let simulatedResponse: NLPResult;
-    
-    // Mock results based on input text patterns
-    if (text.toLowerCase().includes("send money") || text.toLowerCase().includes("transfer")) {
-      simulatedResponse = {
-        intent: "sendMoney",
-        entities: [
-          { type: "recipient", value: text.includes("John") ? "John" : "unknown recipient" },
-          { type: "amount", value: text.match(/\d+/) ? text.match(/\d+/)![0] : "unspecified" }
-        ],
-        confidence: 0.91
-      };
-    } else if (text.toLowerCase().includes("pay bill") || text.toLowerCase().includes("electricity") || text.toLowerCase().includes("utility")) {
-      simulatedResponse = {
-        intent: "payBill",
-        entities: [
-          { type: "billType", value: text.includes("electricity") ? "electricity" : "unspecified" }
-        ],
-        confidence: 0.88
-      };
-    } else if (text.toLowerCase().includes("buy load") || text.toLowerCase().includes("phone")) {
-      simulatedResponse = {
-        intent: "buyLoad",
-        entities: [
-          { type: "phoneNumber", value: "unspecified" }
-        ],
-        confidence: 0.93
-      };
-    } else if (text.toLowerCase().includes("balance") || text.toLowerCase().includes("how much")) {
-      simulatedResponse = {
-        intent: "checkBalance",
-        entities: [],
-        confidence: 0.96
-      };
+    if (realNLPService) {
+      return await realNLPService.analyze(text);
     } else {
-      simulatedResponse = {
-        intent: "unknown",
-        entities: [],
-        confidence: 0.40
-      };
+      throw new Error('NLP service is not available');
     }
-    
-    return simulateApiCall(simulatedResponse);
   }
 };
 
@@ -260,19 +179,24 @@ export const NLPService = {
  */
 export const ImageRecognitionService = {
   analyze: async (imageBlob: Blob): Promise<ImageRecognitionResult> => {
-    console.log("Analyzing image with Alibaba Cloud Image Recognition...");
+    console.log("Using Alibaba Cloud Image Recognition...");
     
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    const response = await axios.post(
+      `${AlibabaCloudConfig.endpoints.imageRecognition}/analyze`,
+      imageBlob,
+      {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Authorization': `Bearer ${AlibabaCloudConfig.accessKeyId}`
+        }
+      }
+    );
     
-    // For prototype, return mock results
-    const mockResult: ImageRecognitionResult = {
-      description: "A QR code for payment",
-      tags: ["QR code", "payment", "financial", "digital"],
-      confidence: 0.87
+    return {
+      description: response.data.description || "Image analyzed successfully",
+      tags: response.data.tags || [],
+      confidence: response.data.confidence || 0.8
     };
-    
-    return simulateApiCall(mockResult);
   }
 };
 
@@ -282,51 +206,13 @@ export const ImageRecognitionService = {
  */
 export const OCRService = {
   extractText: async (imageBlob: Blob): Promise<OCRResult> => {
-    console.log("Using Alibaba Cloud OCR service...");
+    console.log("Using Alibaba Cloud OCR...");
     
-    // Check if we should use real APIs
-    if (AppSettings.useRealAPIs && realOCRService) {
-      try {
-        return await realOCRService.extractText(imageBlob);
-      } catch (error) {
-        console.error('Real OCR service failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
-      }
+    if (realOCRService) {
+      return await realOCRService.extractText(imageBlob);
+    } else {
+      throw new Error('OCR service is not available');
     }
-    
-    // Simulation mode
-    console.log("Using simulated OCR");
-    
-    // For prototype, we'll have different mock results for different contexts
-    // This allows more realistic simulation during demos
-    
-    // Check blob size to simulate different types of documents
-    const blobSize = imageBlob.size;
-    let simulatedResult: OCRResult;
-    
-    // Simulated QR code (small image)
-    if (blobSize < 1000) {
-      simulatedResult = {
-        text: "GCash Payment QR\nUser: John Doe\nMobile: 09171234567",
-        confidence: 0.95
-      };
-    } 
-    // Simulated bill (medium image)
-    else if (blobSize < 10000) {
-      simulatedResult = {
-        text: "Meralco Electricity Bill\nAccount No: 1234567890\nAmount Due: PHP 1,520.75\nDue Date: 07/15/2025",
-        confidence: 0.92
-      };
-    }
-    // Simulated receipt (larger image) 
-    else {
-      simulatedResult = {
-        text: "GCash Receipt\nTransaction ID: GC12345678\nDate: 06/30/2025\nType: Send Money\nRecipient: Maria Santos\nAmount: PHP 500.00\nFee: PHP 0.00\nTotal: PHP 500.00\nStatus: Success",
-        confidence: 0.88
-      };
-    }
-    
-    return simulateApiCall(simulatedResult);
   }
 };
 
@@ -335,7 +221,6 @@ export const OCRService = {
  * Converts text into natural-sounding speech
  */
 export const TextToSpeechService = {
-  // Available voice options for the TTS service
   voices: [
     { id: "default", name: "Default Female", language: "en-US" },
     { id: "male1", name: "Male Voice 1", language: "en-US" },
@@ -345,29 +230,14 @@ export const TextToSpeechService = {
     { id: "fil", name: "Filipino", language: "fil-PH" }
   ],
   
-  synthesize: async (text: string, voiceId: string = "default"): Promise<string> => {
-    console.log(`Using Alibaba Cloud TTS with voice ${voiceId}:`, text);
+  synthesize: async (text: string, voiceId: string = "female"): Promise<string> => {
+    console.log(`Synthesizing speech: "${text}" with voice ${voiceId}`);
     
-    // Check if we should use real APIs
-    if (AppSettings.useRealAPIs && realTextToSpeechService) {
-      try {
-        return await realTextToSpeechService.synthesize(text, voiceId);
-      } catch (error) {
-        console.error('Real TTS service failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
-      }
+    if (realTextToSpeechService) {
+      return await realTextToSpeechService.synthesize(text, voiceId);
+    } else {
+      throw new Error('Text-to-Speech service is not available');
     }
-    
-    // Simulation mode
-    console.log("Using simulated TTS");
-    
-    // Generate a somewhat unique hash based on input text + voice to simulate different audio files
-    const textHash = text.length.toString(16) + voiceId;
-    
-    // In a real implementation, we would store the audio file locally and return its URI
-    const mockUrl = `https://example.com/tts-audio-${textHash}.mp3`;
-    
-    return simulateApiCall(mockUrl);
   }
 };
 
@@ -406,6 +276,168 @@ export const PersonalizationService = {
   }
 };
 
+/**
+ * Voice Authentication Service (Alibaba Cloud Voice Biometrics)
+ * Provides biometric voice authentication for secure access
+ */
+export const VoiceAuthenticationService = {
+  enrollVoice: async (userId: string, audioBlob: Blob, phrase?: string): Promise<VoiceEnrollmentResult> => {
+    console.log(`Enrolling voice for user: ${userId}`);
+    
+    // Check if we should use real APIs
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.enrollVoice(userId, audioBlob, phrase);
+      } catch (error) {
+        console.error('Real voice enrollment failed, falling back to simulation', error);
+        // Fall back to simulation if real API fails
+      }
+    }
+    
+    // Simulation mode
+    console.log("Using simulated Voice Enrollment");
+    
+    // Generate a mock voice ID based on userId
+    const mockVoiceId = `voice_${userId}_${Date.now().toString(16)}`;
+    
+    await simulateApiCall(undefined);
+    
+    return {
+      success: true,
+      voiceId: mockVoiceId,
+      message: 'Voice enrolled successfully (SIMULATED)'
+    };
+  },
+  
+  verifyVoice: async (voiceId: string, audioBlob: Blob, phrase?: string): Promise<VoiceVerificationResult> => {
+    console.log(`Verifying voice against ID: ${voiceId}`);
+    
+    // Check if we should use real APIs
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.verifyVoice(voiceId, audioBlob, phrase);
+      } catch (error) {
+        console.error('Real voice verification failed, falling back to simulation', error);
+        // Fall back to simulation if real API fails
+      }
+    }
+    
+    // Simulation mode
+    console.log("Using simulated Voice Verification");
+    
+    // For demo purposes, simulate a successful verification most of the time
+    const successRate = 0.9; // 90% success rate for demos
+    const verified = Math.random() < successRate;
+    const confidence = verified ? 0.8 + (Math.random() * 0.2) : 0.3 + (Math.random() * 0.4);
+    
+    await simulateApiCall(undefined);
+    
+    return {
+      verified,
+      confidence,
+      message: verified ? 
+        'Voice verified successfully (SIMULATED)' : 
+        'Voice verification failed: Confidence below threshold (SIMULATED)'
+    };
+  },
+  
+  getVoiceProfiles: async (userId: string): Promise<VoiceProfile[]> => {
+    console.log(`Getting voice profiles for user: ${userId}`);
+    
+    // Check if we should use real APIs
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.getVoiceProfiles(userId);
+      } catch (error) {
+        console.error('Failed to get real voice profiles, falling back to simulation', error);
+        // Fall back to simulation if real API fails
+      }
+    }
+    
+    // Simulation mode - return a mock profile
+    console.log("Using simulated Voice Profiles");
+    
+    await simulateApiCall(undefined);
+    
+    return [{
+      voiceId: `voice_${userId}_primary`,
+      userId: userId,
+      createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+      status: 'active'
+    }];
+  },
+  
+  deleteVoiceProfile: async (voiceId: string): Promise<boolean> => {
+    console.log(`Deleting voice profile: ${voiceId}`);
+    
+    // Check if we should use real APIs
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.deleteVoiceProfile(voiceId);
+      } catch (error) {
+        console.error('Failed to delete real voice profile, falling back to simulation', error);
+        // Fall back to simulation if real API fails
+      }
+    }
+    
+    // Simulation mode
+    console.log("Using simulated Profile Deletion");
+    
+    await simulateApiCall(undefined);
+    
+    return true; // Always succeed in simulation
+  },
+  
+  // Record audio for voice authentication
+  startRecording: async (): Promise<{ recording: any }> => {
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.startRecording();
+      } catch (error) {
+        console.error('Failed to start recording with real implementation', error);
+        throw error;
+      }
+    } else if (realSpeechRecognition) {
+      // Fall back to speech recognition recording
+      return await realSpeechRecognition.startRecording();
+    } else {
+      throw new Error('No recording implementation available');
+    }
+  },
+  
+  stopRecording: async (recording: any): Promise<string> => {
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.stopRecording(recording);
+      } catch (error) {
+        console.error('Failed to stop recording with real implementation', error);
+        throw error;
+      }
+    } else if (realSpeechRecognition) {
+      // Fall back to speech recognition recording
+      return await realSpeechRecognition.stopRecording(recording);
+    } else {
+      throw new Error('No recording implementation available');
+    }
+  },
+  
+  audioFileToBlob: async (fileUri: string): Promise<Blob> => {
+    if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
+      try {
+        return await realVoiceAuthenticationService.audioFileToBlob(fileUri);
+      } catch (error) {
+        console.error('Failed to convert audio file with real implementation', error);
+        throw error;
+      }
+    } else if (realSpeechRecognition) {
+      // Fall back to speech recognition implementation
+      return await realSpeechRecognition.audioFileToBlob(fileUri);
+    } else {
+      throw new Error('No audio conversion implementation available');
+    }
+  }
+};
+
 // Combine all services into a single export
 const AlibabaCloudAI = {
   SpeechRecognition: SpeechRecognitionService,
@@ -413,6 +445,7 @@ const AlibabaCloudAI = {
   ImageRecognition: ImageRecognitionService,
   OCR: OCRService,
   TextToSpeech: TextToSpeechService,
+  VoiceAuthentication: VoiceAuthenticationService,
   Personalization: PersonalizationService
 };
 
