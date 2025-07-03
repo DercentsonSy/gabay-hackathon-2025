@@ -1,13 +1,9 @@
-/**
- * Real implementation of Speech Recognition using Alibaba Cloud NLS service
- */
 import axios from 'axios';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import AlibabaCloudConfig from '../config/alibabacloud';
 import { SpeechRecognitionResult } from './AlibabaCloudAI';
 
-// Create a simple way to encode blob data
 const blobToBase64 = async (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -24,15 +20,12 @@ const blobToBase64 = async (blob: Blob): Promise<string> => {
   });
 };
 
-// Get NLS token - in a production app, you'd want to cache this token
 const getNLSToken = async (): Promise<string> => {
   try {
-    // If you already have a token from the Alibaba Cloud console, use that
     if (AlibabaCloudConfig.nls.token && AlibabaCloudConfig.nls.token !== 'YOUR_NLS_TOKEN') {
       return AlibabaCloudConfig.nls.token;
     }
     
-    // Otherwise, request a token from the NLS API
     const response = await axios({
       method: 'POST',
       url: `${AlibabaCloudConfig.endpoints.nls}/CreateToken`,
@@ -48,29 +41,24 @@ const getNLSToken = async (): Promise<string> => {
     return response.data.Token.Id;
   } catch (error) {
     console.error('Failed to get NLS token:', error);
-    throw error;
+    throw new Error('Failed to get NLS token');
   }
 };
 
-// Implements real speech recognition using Alibaba Cloud NLS
 export const realSpeechRecognitionService = {
-  // Record audio from microphone
   startRecording: async (): Promise<{ recording: Audio.Recording }> => {
     try {
-      // Request permission
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
         throw new Error('Audio recording permission not granted');
       }
       
-      // Set audio mode
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
       });
       
-      // Start recording
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         android: {
@@ -112,7 +100,6 @@ export const realSpeechRecognitionService = {
     try {
       await recording.stopAndUnloadAsync();
       
-      // Get recording URI
       const uri = recording.getURI();
       if (!uri) {
         throw new Error('No recording URI available');
@@ -125,18 +112,14 @@ export const realSpeechRecognitionService = {
     }
   },
   
-  // Recognize speech from audio file
   recognize: async (audioBlob: Blob): Promise<SpeechRecognitionResult> => {
     try {
       console.log("Sending audio to Alibaba Cloud Speech Recognition...");
       
-      // Get token for NLS service
       const token = await getNLSToken();
       
-      // Convert blob to base64
       const base64Audio = await blobToBase64(audioBlob);
       
-      // Send to Alibaba Cloud NLS API
       const response = await axios({
         method: 'POST',
         url: `${AlibabaCloudConfig.endpoints.nls}/nls-service/v1/asr`,
@@ -156,7 +139,6 @@ export const realSpeechRecognitionService = {
         }
       });
       
-      // Parse response
       console.log('NLS ASR Response:', JSON.stringify(response.data));
       
       if (response.data && response.data.result) {
@@ -165,13 +147,11 @@ export const realSpeechRecognitionService = {
           confidence: response.data.confidence || 0.8
         };
       } else if (response.data && response.data.flash_result) {
-        // Alternative response format
         return {
           text: response.data.flash_result.sentences[0]?.text || "",
           confidence: response.data.flash_result.sentences[0]?.confidence || 0.8
         };
       } else {
-        console.error('Unexpected NLS response format:', response.data);
         return {
           text: "I couldn't understand that. Please try again.",
           confidence: 0.1
@@ -180,7 +160,6 @@ export const realSpeechRecognitionService = {
     } catch (error) {
       console.error('Error in speech recognition:', error);
       
-      // Fallback for prototype
       return {
         text: "Sorry, I encountered an error processing your speech.",
         confidence: 0.1
@@ -188,7 +167,6 @@ export const realSpeechRecognitionService = {
     }
   },
   
-  // Convert audio file to blob for processing
   audioFileToBlob: async (fileUri: string): Promise<Blob> => {
     try {
       const fileInfo = await FileSystem.getInfoAsync(fileUri);
@@ -196,19 +174,16 @@ export const realSpeechRecognitionService = {
         throw new Error('Audio file does not exist');
       }
       
-      // Read file as base64
       const base64Audio = await FileSystem.readAsStringAsync(fileUri, {
         encoding: FileSystem.EncodingType.Base64
       });
       
-      // Convert to binary
       const binaryString = atob(base64Audio);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      // Create blob
       return new Blob([bytes], { type: 'audio/wav' });
     } catch (error) {
       console.error('Error converting audio file to blob:', error);

@@ -1,24 +1,9 @@
-/**
- * AlibabaCloudAI.ts
- * 
- * This service integrates with Alibaba Cloud's AI products for enhanced accessibility:
- * - Speech Recognition & NLP (Natural Language Processing)
- * - Image Recognition
- * - OCR (Optical Character Recognition)
- * - Text-to-Speech
- * - User Personalization
- * 
- * This implementation supports both simulation mode and real API mode.
- * The mode is controlled by the AppSettings.useRealAPIs flag.
- */
-
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import AlibabaCloudConfig from '../config/alibabacloud';
 import AppSettings from '../config/appSettings';
 import { VoiceVerificationResult, VoiceEnrollmentResult, VoiceProfile } from './VoiceAuthenticationImplementation';
 
-// Types for the services
 export interface SpeechRecognitionResult {
   text: string;
   confidence: number;
@@ -44,29 +29,23 @@ export interface OCRResult {
   confidence: number;
 }
 
-// Voice type definition
 export interface Voice {
   id: string;
   name: string;
   language: string;
 }
 
-// Helper functions for simulation
 const simulateApiCall = async <T>(result: T): Promise<T> => {
-  // Simulate API processing time
   await new Promise(resolve => 
     setTimeout(resolve, AppSettings.simulation.processingDelay)
   );
   
-  // Simulate occasional API failures
   if (Math.random() > AppSettings.simulation.successRate) {
     throw new Error('Simulated API failure');
   }
   
   return result;
 };
-
-// Define interfaces for real implementations to fix TypeScript errors
 interface IRealSpeechRecognition {
   recognize: (audioBlob: Blob) => Promise<SpeechRecognitionResult>;
   startRecording: () => Promise<{ recording: any }>;
@@ -117,10 +96,6 @@ try {
   console.warn('Failed to import real API implementations', error);
 }
 
-/**
- * Speech Recognition Service (Alibaba Cloud Intelligent Speech Interaction)
- * Converts spoken language into text
- */
 export const SpeechRecognitionService = {
   recognize: async (audioBlob: Blob): Promise<SpeechRecognitionResult> => {
     console.log("Using Alibaba Cloud Speech Recognition...");
@@ -157,10 +132,6 @@ export const SpeechRecognitionService = {
   }
 };
 
-/**
- * Natural Language Processing (Alibaba Cloud Natural Language Processing)
- * Analyzes text to understand intent and extract entities
- */
 export const NLPService = {
   analyze: async (text: string): Promise<NLPResult> => {
     console.log(`Analyzing text with NLP: ${text}`);
@@ -173,10 +144,6 @@ export const NLPService = {
   }
 };
 
-/**
- * Image Recognition Service (Alibaba Cloud Image Recognition)
- * Analyzes images to identify content, particularly useful for visually impaired users
- */
 export const ImageRecognitionService = {
   analyze: async (imageBlob: Blob): Promise<ImageRecognitionResult> => {
     console.log("Using Alibaba Cloud Image Recognition...");
@@ -200,10 +167,6 @@ export const ImageRecognitionService = {
   }
 };
 
-/**
- * OCR Service (Alibaba Cloud OCR)
- * Extracts text from images, useful for reading bills or documents
- */
 export const OCRService = {
   extractText: async (imageBlob: Blob): Promise<OCRResult> => {
     console.log("Using Alibaba Cloud OCR...");
@@ -216,10 +179,6 @@ export const OCRService = {
   }
 };
 
-/**
- * Text to Speech Service (Alibaba Cloud Intelligent Speech Interaction)
- * Converts text into natural-sounding speech
- */
 export const TextToSpeechService = {
   voices: [
     { id: "default", name: "Default Female", language: "en-US" },
@@ -241,10 +200,6 @@ export const TextToSpeechService = {
   }
 };
 
-/**
- * Personalization Service (Alibaba Cloud Machine Learning)
- * Learns user preferences and behavior to personalize the experience
- */
 export const PersonalizationService = {
   getUserPreferences: async (userId: string): Promise<any> => {
     console.log(`Getting personalized settings for user: ${userId}`);
@@ -269,35 +224,25 @@ export const PersonalizationService = {
   },
   
   logUserInteraction: async (userId: string, interaction: string): Promise<void> => {
-    // Log user interactions to improve personalization
     console.log(`Logging interaction for user ${userId}: ${interaction}`);
-    // In real implementation, this would send data to Alibaba Cloud
     return simulateApiCall(undefined);
   }
 };
 
-/**
- * Voice Authentication Service (Alibaba Cloud Voice Biometrics)
- * Provides biometric voice authentication for secure access
- */
 export const VoiceAuthenticationService = {
   enrollVoice: async (userId: string, audioBlob: Blob, phrase?: string): Promise<VoiceEnrollmentResult> => {
     console.log(`Enrolling voice for user: ${userId}`);
     
-    // Check if we should use real APIs
     if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
       try {
         return await realVoiceAuthenticationService.enrollVoice(userId, audioBlob, phrase);
       } catch (error) {
         console.error('Real voice enrollment failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
       }
     }
     
-    // Simulation mode
     console.log("Using simulated Voice Enrollment");
     
-    // Generate a mock voice ID based on userId
     const mockVoiceId = `voice_${userId}_${Date.now().toString(16)}`;
     
     await simulateApiCall(undefined);
@@ -312,21 +257,17 @@ export const VoiceAuthenticationService = {
   verifyVoice: async (voiceId: string, audioBlob: Blob, phrase?: string): Promise<VoiceVerificationResult> => {
     console.log(`Verifying voice against ID: ${voiceId}`);
     
-    // Check if we should use real APIs
     if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
       try {
         return await realVoiceAuthenticationService.verifyVoice(voiceId, audioBlob, phrase);
       } catch (error) {
         console.error('Real voice verification failed, falling back to simulation', error);
-        // Fall back to simulation if real API fails
       }
     }
     
-    // Simulation mode
     console.log("Using simulated Voice Verification");
     
-    // For demo purposes, simulate a successful verification most of the time
-    const successRate = 0.9; // 90% success rate for demos
+    const successRate = 0.9;
     const verified = Math.random() < successRate;
     const confidence = verified ? 0.8 + (Math.random() * 0.2) : 0.3 + (Math.random() * 0.4);
     
@@ -335,26 +276,21 @@ export const VoiceAuthenticationService = {
     return {
       verified,
       confidence,
-      message: verified ? 
-        'Voice verified successfully (SIMULATED)' : 
-        'Voice verification failed: Confidence below threshold (SIMULATED)'
+      message: verified ? 'Voice verified (SIMULATED)' : 'Voice verification failed (SIMULATED)'
     };
   },
   
   getVoiceProfiles: async (userId: string): Promise<VoiceProfile[]> => {
     console.log(`Getting voice profiles for user: ${userId}`);
     
-    // Check if we should use real APIs
     if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
       try {
         return await realVoiceAuthenticationService.getVoiceProfiles(userId);
       } catch (error) {
         console.error('Failed to get real voice profiles, falling back to simulation', error);
-        // Fall back to simulation if real API fails
       }
     }
     
-    // Simulation mode - return a mock profile
     console.log("Using simulated Voice Profiles");
     
     await simulateApiCall(undefined);
@@ -362,7 +298,7 @@ export const VoiceAuthenticationService = {
     return [{
       voiceId: `voice_${userId}_primary`,
       userId: userId,
-      createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
       status: 'active'
     }];
   },
@@ -370,25 +306,21 @@ export const VoiceAuthenticationService = {
   deleteVoiceProfile: async (voiceId: string): Promise<boolean> => {
     console.log(`Deleting voice profile: ${voiceId}`);
     
-    // Check if we should use real APIs
     if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
       try {
         return await realVoiceAuthenticationService.deleteVoiceProfile(voiceId);
       } catch (error) {
         console.error('Failed to delete real voice profile, falling back to simulation', error);
-        // Fall back to simulation if real API fails
       }
     }
     
-    // Simulation mode
     console.log("Using simulated Profile Deletion");
     
     await simulateApiCall(undefined);
     
-    return true; // Always succeed in simulation
+    return true;
   },
   
-  // Record audio for voice authentication
   startRecording: async (): Promise<{ recording: any }> => {
     if (AppSettings.useRealAPIs && realVoiceAuthenticationService) {
       try {
@@ -398,7 +330,6 @@ export const VoiceAuthenticationService = {
         throw error;
       }
     } else if (realSpeechRecognition) {
-      // Fall back to speech recognition recording
       return await realSpeechRecognition.startRecording();
     } else {
       throw new Error('No recording implementation available');
@@ -414,7 +345,6 @@ export const VoiceAuthenticationService = {
         throw error;
       }
     } else if (realSpeechRecognition) {
-      // Fall back to speech recognition recording
       return await realSpeechRecognition.stopRecording(recording);
     } else {
       throw new Error('No recording implementation available');
@@ -430,7 +360,6 @@ export const VoiceAuthenticationService = {
         throw error;
       }
     } else if (realSpeechRecognition) {
-      // Fall back to speech recognition implementation
       return await realSpeechRecognition.audioFileToBlob(fileUri);
     } else {
       throw new Error('No audio conversion implementation available');

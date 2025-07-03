@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator, Alert, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert, Animated, Easing, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AlibabaCloudAI, { NLPResult } from '../services/AlibabaCloudAI';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface VoiceAssistantProps {
@@ -10,7 +12,7 @@ interface VoiceAssistantProps {
   userId?: string;
 }
 
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-right', userId = 'user123' }) => {
+const VoiceAssistant = ({ position = 'bottom-right', userId = 'user123' }: VoiceAssistantProps) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -30,7 +32,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
         const preferences = await AlibabaCloudAI.Personalization.getUserPreferences(userId);
         setUserPreferences(preferences);
         
-        // Set voice preference
         if (preferences?.preferredVoice) {
           setVoiceId(preferences.preferredVoice);
         }
@@ -47,7 +48,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
     let rippleAnimation: Animated.CompositeAnimation;
     
     if (isListening) {
-      // Create pulse animation
       pulseAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -65,7 +65,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
         ])
       );
       
-      // Create ripple animation
       rippleAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(rippleAnim, {
@@ -112,12 +111,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
       setProcessingAI(true);
       
       AlibabaCloudAI.Personalization.logUserInteraction(userId, `voice_command:${command}`);
-      
       const nlpResult: NLPResult = await AlibabaCloudAI.NLP.analyze(command);
       
       switch(nlpResult.intent) {
         case 'sendMoney':
-
           const recipient = nlpResult.entities.find(e => e.type === 'recipient')?.value || 'someone';
           const amount = nlpResult.entities.find(e => e.type === 'amount')?.value || '';
           
@@ -125,9 +122,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
             `Opening send money to ${recipient} for ${amount} pesos...` : 
             `Opening send money to ${recipient}...`;
           
-
           await AlibabaCloudAI.TextToSpeech.synthesize(sendResponse, voiceId);
-          
           setResponse(sendResponse);
           setTimeout(() => {
             setModalVisible(false);
@@ -140,9 +135,7 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
           const billType = nlpResult.entities.find(e => e.type === 'billType')?.value || 'bills';
           const billResponse = `Opening ${billType} payment...`;
           
-          // Synthesize speech
           await AlibabaCloudAI.TextToSpeech.synthesize(billResponse, voiceId);
-          
           setResponse(billResponse);
           setTimeout(() => {
             setModalVisible(false);
@@ -153,8 +146,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
           
         case 'buyLoad':
           const loadResponse = 'Opening buy load feature...';
-          
-          // Synthesize speech
           await AlibabaCloudAI.TextToSpeech.synthesize(loadResponse, voiceId);
           
           setResponse(loadResponse);
@@ -167,15 +158,12 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
           
         case 'checkBalance':
           const balanceResponse = 'Your current balance is 5,280 pesos.';
-          
-          // Synthesize speech
           await AlibabaCloudAI.TextToSpeech.synthesize(balanceResponse, voiceId);
           
           setResponse(balanceResponse);
           break;
           
         default:
-          // Handle navigation commands manually
           if (command.toLowerCase().includes('home')) {
             const homeResponse = 'Going to home screen...';
             await AlibabaCloudAI.TextToSpeech.synthesize(homeResponse, voiceId);
@@ -214,25 +202,31 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
       setTranscript('');
       setResponse('');
       
+      const { recording } = await AlibabaCloudAI.SpeechRecognition.startRecording();
+      
       setTimeout(async () => {
         try {
-          const audioBlob = new Blob([], { type: 'audio/wav' });
+          const audioUri = await AlibabaCloudAI.SpeechRecognition.stopRecording(recording);
+          console.log('Audio recorded, URI:', audioUri);
           
-
+          const audioBlob = await AlibabaCloudAI.SpeechRecognition.audioFileToBlob(audioUri);
+          console.log('Audio converted to blob, size:', audioBlob.size);
+          
           const recognitionResult = await AlibabaCloudAI.SpeechRecognition.recognize(audioBlob);
+          console.log('Speech recognition result:', recognitionResult);
           
-          setTranscript(recognitionResult.text);
+          const transcribedText = recognitionResult.text;
+          setTranscript(transcribedText);
+          
           setIsListening(false);
-          
-          // Process the recognized command
-          await handleVoiceCommand(recognitionResult.text);
+          await handleVoiceCommand(transcribedText);
           
         } catch (error) {
           console.error('Error during speech recognition:', error);
           setIsListening(false);
-          setResponse('Sorry, I had trouble hearing you. Please try again.');
+          setResponse('Sorry, I had trouble processing your request. Please try again.');
         }
-      }, 2000); // Simulating 2 seconds of recording
+      }, 4000); // Give user 4 seconds to speak
     } catch (error) {
       console.error('Error starting speech recognition:', error);
       Alert.alert('Error', 'Could not access microphone. Please check permissions.');
@@ -242,12 +236,12 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
   
   const useSampleCommand = (command: string) => {
     setTranscript(command);
+    setProcessingAI(true);
     handleVoiceCommand(command);
   };
 
   return (
     <>
-      {/* Floating voice assistant button with GCash style */}
       <TouchableOpacity
         style={[styles.assistantButton, position === 'bottom-right' ? styles.bottomRight : styles.bottomCenter]}
         onPress={() => setModalVisible(true)}
@@ -263,11 +257,10 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
         </LinearGradient>
       </TouchableOpacity>
       
-      {/* GCash-style modal */}
       <Modal
         transparent={true}
         visible={modalVisible}
-        animationType="none" // We handle animation ourselves
+        animationType="none"
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -417,7 +410,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ position = 'bottom-righ
 };
 
 const styles = StyleSheet.create({
-  // GCash-style assistant button
   assistantButton: {
     width: 56,
     height: 56,

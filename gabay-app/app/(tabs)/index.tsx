@@ -8,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import VoiceAssistant from '@/components/VoiceAssistant';
 
-// Transaction data with the GCash style
 type TransactionType = 'credit' | 'debit';
 
 interface Transaction {
@@ -65,13 +64,11 @@ export default function HomeScreen() {
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
 
-  // Function to navigate to transaction details
   const handleTransactionPress = (id: string) => {
     console.log(`Transaction ${id} pressed`);
     // router.push(`/(tabs)/transactions/${id}`);
   };
 
-  // Function to format amount with currency symbol
   const formatAmount = (amount: number) => {
     return amount >= 0 ? `₱${amount.toFixed(2)}` : `-₱${Math.abs(amount).toFixed(2)}`;
   };
@@ -80,7 +77,6 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <StatusBar style="auto" />
       
-      {/* Header section with gradient background */}
       <LinearGradient
         colors={['#0070e0', '#0089dc']}
         style={styles.headerGradient}
@@ -97,7 +93,6 @@ export default function HomeScreen() {
         </View>
       </LinearGradient>
 
-      {/* Balance Card - GCash style */}
       <View style={styles.balanceCard}>
         <View style={styles.balanceHeader}>
           <Text style={styles.balanceLabel}>Available Balance</Text>
@@ -151,7 +146,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Core Features Section */}
       <View style={styles.quickActionsContainer}>
         <Text style={styles.sectionTitle}>Features</Text>
         <View style={styles.quickActions}>
