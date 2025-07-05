@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert, Animated, Easing, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Alert, Animated, Easing, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AlibabaCloudAI, { NLPResult } from '../services/AlibabaCloudAI';
@@ -20,11 +20,18 @@ const VoiceAssistant = ({ position = 'bottom-right', userId = 'user123' }: Voice
   const [processingAI, setProcessingAI] = useState(false);
   const [userPreferences, setUserPreferences] = useState<any>(null);
   const [voiceId, setVoiceId] = useState('female_1');
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [maxRecordingDuration] = useState(10000); // 10 seconds maximum recording time
+  const [isHoldingMic, setIsHoldingMic] = useState(false);
+  
   const router = useRouter();
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const rippleAnim = useRef(new Animated.Value(0)).current;
   const modalSlideAnim = useRef(new Animated.Value(0)).current;
+  const recordingProgressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loadUserPreferences = async () => {
@@ -196,41 +203,112 @@ const VoiceAssistant = ({ position = 'bottom-right', userId = 'user123' }: Voice
     }
   };
 
+  useEffect(() => {
+    // Clean up any ongoing recording when the component unmounts
+    return () => {
+      if (recordingRef.current) {
+        try {
+          recordingRef.current.stopAndUnloadAsync();
+        } catch (error) {
+          console.error('Error cleaning up recording:', error);
+        }
+      }
+      
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+      }
+    };
+  }, []);
+  
+  // Effect to handle recording duration animation
+  useEffect(() => {
+    if (isListening) {
+      Animated.timing(recordingProgressAnim, {
+        toValue: 1,
+        duration: maxRecordingDuration,
+        easing: Easing.linear,
+        useNativeDriver: false
+      }).start();
+    } else {
+      recordingProgressAnim.setValue(0);
+    }
+    
+    return () => {
+      recordingProgressAnim.stopAnimation();
+    };
+  }, [isListening, maxRecordingDuration, recordingProgressAnim]);
+
   const startListening = async () => {
     try {
       setIsListening(true);
       setTranscript('');
       setResponse('');
+      setRecordingDuration(0);
+      recordingProgressAnim.setValue(0);
       
+      console.log('Starting voice recording...');
       const { recording } = await AlibabaCloudAI.SpeechRecognition.startRecording();
+      recordingRef.current = recording;
       
-      setTimeout(async () => {
-        try {
-          const audioUri = await AlibabaCloudAI.SpeechRecognition.stopRecording(recording);
-          console.log('Audio recorded, URI:', audioUri);
-          
-          const audioBlob = await AlibabaCloudAI.SpeechRecognition.audioFileToBlob(audioUri);
-          console.log('Audio converted to blob, size:', audioBlob.size);
-          
-          const recognitionResult = await AlibabaCloudAI.SpeechRecognition.recognize(audioBlob);
-          console.log('Speech recognition result:', recognitionResult);
-          
-          const transcribedText = recognitionResult.text;
-          setTranscript(transcribedText);
-          
-          setIsListening(false);
-          await handleVoiceCommand(transcribedText);
-          
-        } catch (error) {
-          console.error('Error during speech recognition:', error);
-          setIsListening(false);
-          setResponse('Sorry, I had trouble processing your request. Please try again.');
+      // Start a timer to track recording duration
+      const startTime = Date.now();
+      const durationTimer = setInterval(() => {
+        const currentDuration = Date.now() - startTime;
+        setRecordingDuration(currentDuration);
+        
+        if (currentDuration >= maxRecordingDuration) {
+          clearInterval(durationTimer);
+          stopListening();
         }
-      }, 4000); // Give user 4 seconds to speak
+      }, 100);
+      
+      // Set up the automatic stop after max duration
+      recordingTimerRef.current = setTimeout(() => {
+        stopListening();
+      }, maxRecordingDuration);
+      
     } catch (error) {
       console.error('Error starting speech recognition:', error);
       Alert.alert('Error', 'Could not access microphone. Please check permissions.');
       setIsListening(false);
+    }
+  };
+  
+  const stopListening = async () => {
+    try {
+      if (!recordingRef.current || !isListening) return;
+      
+      setIsListening(false);
+      setProcessingAI(true);
+      
+      // Clear any timers
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+      
+      console.log('Stopping voice recording...');
+      const audioUri = await AlibabaCloudAI.SpeechRecognition.stopRecording(recording);
+      console.log('Audio recorded, URI:', audioUri);
+      
+      const audioBlob = await AlibabaCloudAI.SpeechRecognition.audioFileToBlob(audioUri);
+      console.log('Audio converted to blob, size:', audioBlob.size);
+      
+      const recognitionResult = await AlibabaCloudAI.SpeechRecognition.recognize(audioBlob);
+      console.log('Speech recognition result:', recognitionResult);
+      
+      const transcribedText = recognitionResult.text;
+      setTranscript(transcribedText);
+      
+      await handleVoiceCommand(transcribedText);
+    } catch (error) {
+      console.error('Error during speech recognition:', error);
+      setResponse('Sorry, I had trouble processing your request. Please try again.');
+    } finally {
+      setProcessingAI(false);
     }
   };
   
@@ -293,7 +371,17 @@ const VoiceAssistant = ({ position = 'bottom-right', userId = 'user123' }: Voice
             <View style={styles.assistantContent}>
               {isListening ? (
                 <View style={styles.listeningIndicator}>
-                  <Text style={styles.listeningText}>Listening...</Text>
+                  <Text style={styles.listeningText}>Listening... {Math.floor(recordingDuration / 1000)}.{Math.floor((recordingDuration % 1000) / 100)}s</Text>
+                  <View style={styles.recordingProgressContainer}>
+                    <Animated.View 
+                      style={[styles.recordingProgress, {
+                        width: recordingProgressAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0%', '100%']
+                        })
+                      }]} 
+                    />
+                  </View>
                   <Animated.View 
                     style={[
                       styles.pulsingDot,
@@ -346,11 +434,22 @@ const VoiceAssistant = ({ position = 'bottom-right', userId = 'user123' }: Voice
               />
               <TouchableOpacity 
                 style={styles.micButton}
-                onPress={startListening}
-                disabled={isListening || processingAI}
+                onPressIn={() => {
+                  if (!isListening && !processingAI) {
+                    setIsHoldingMic(true);
+                    startListening();
+                  }
+                }}
+                onPressOut={() => {
+                  if (isHoldingMic) {
+                    setIsHoldingMic(false);
+                    stopListening();
+                  }
+                }}
+                disabled={processingAI}
                 accessible={true}
-                accessibilityLabel={isListening ? "Listening" : "Tap to speak"}
-                accessibilityHint="Tap to activate voice assistant"
+                accessibilityLabel={isListening ? "Listening" : "Press and hold to speak"}
+                accessibilityHint="Press and hold to activate voice assistant, release when done"
               >
                 <LinearGradient
                   colors={['#0070e0', '#0089dc']}
@@ -489,6 +588,19 @@ const styles = StyleSheet.create({
   },
   listeningIndicator: {
     alignItems: 'center',
+    width: '100%',
+  },
+  recordingProgressContainer: {
+    width: '100%',
+    height: 4,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 2,
+    marginVertical: 10,
+  },
+  recordingProgress: {
+    height: '100%',
+    backgroundColor: '#0070e0',
+    borderRadius: 2,
   },
   listeningText: {
     fontSize: 18,
